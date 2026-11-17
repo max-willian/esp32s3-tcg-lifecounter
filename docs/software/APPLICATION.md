@@ -18,6 +18,9 @@ touchscreen device.
 - Select active game.
 - Confirm life point refresh.
 - Persist settings across reboots.
+- Open settings from the counter with either the touch gear or physical BOOT button.
+- User-requested animated hyperspace background on the counter and yellow PV/icons.
+  Animation pauses in menus and confirmation; controls and game rules are unchanged.
 
 ## Startup
 
@@ -35,3 +38,15 @@ On startup:
 - Maximum PV behavior depends on game mode.
 
 See GAME_RULES.md for complete rules.
+
+## Players
+
+The counter supports 1 or 2 players. Options 3/4 show "nao implementado" and
+leave the current selection and all settings unchanged. The selected game is
+shared, while current PV and maximum PV are independent for each player.
+Two-player mode splits at y=120 (P1 above, P2 below). Left/right changes only
+that half's PV. Menu/refresh on the divider take priority over quadrant touches.
+Switching player count preserves both PV totals within the session. On startup
+both counters are initialized from their respective saved maxima (default 34).
+Saving a maximum restores only the edited player's PV. Confirmed refresh
+restores all active players to their respective maxima.

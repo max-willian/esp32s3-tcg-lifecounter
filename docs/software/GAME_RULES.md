@@ -46,3 +46,15 @@ NAO:
 Timeout:
 - Preserve current PV.
 - Return to main screen automatically.
+## Multiple players
+
+Each player uses the existing SWU/Magic rules independently with their own
+20..40 maximum (default 34). Game selection remains shared. Increment is guarded
+against integer overflow. Changing the game retains current totals, as before:
+switching from Magic to SWU does not silently clamp a total already above maximum.
+Selecting 1/2 players preserves current PV; selecting 3/4 changes nothing and shows
+"nao implementado". Saving a maximum restores only the edited player's PV.
+Refresh SIM restores all active players (both in 2-player mode), each to their own
+maximum. NAO and the 3-second timeout preserve both totals. A hidden player 2
+retains PV when switching to 1 player and back during the session. On reboot,
+both counters start at their saved maxima; current totals are not persisted.

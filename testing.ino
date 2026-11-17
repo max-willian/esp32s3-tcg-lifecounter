@@ -4,6 +4,13 @@
 #include <Preferences.h>
 #include <math.h>
 #include <string.h>
+#include <limits.h>
+#include "UIIcons.h"
+#include "SmoothDigits.h"
+#include "SmoothText.h"
+#include "SmoothIcons.h"
+#include "MenuButton.h"
+#include "Hyperspace.h"
 
 // =====================================================
 // CONFIGURAÇÃO DO DISPLAY
@@ -22,11 +29,14 @@
 
 #define TOUCH_ADDRESS 0x15
 
-#define COR_FUNDO 0x4208
-#define COR_BRANCO 0xFFFF
-#define COR_VERDE 0x2645
-#define COR_VERMELHO 0xF800
-#define COR_CINZA 0x8410
+#define COR_FUNDO       0x0000  // Preto nos menus / fallback
+#define COR_BRANCO      0xFFFF
+#define COR_VERDE       0x2645
+#define COR_DESTAQUE    0xFF43  // Amarelo vivo #FFE81F em RGB565
+#define COR_CINZA       0x5AEB
+#define COR_TEXTO       COR_DESTAQUE
+#define COR_TRILHO      0x39C7  // Cinza discreto
+#define COR_CARTAO      0x1082  // Superficies escuras
 
 Arduino_DataBus *bus = new Arduino_ESP32SPI(
   PIN_LCD_DC,
@@ -36,21 +46,31 @@ Arduino_DataBus *bus = new Arduino_ESP32SPI(
   GFX_NOT_DEFINED
 );
 
-Arduino_GFX *gfx = new Arduino_GC9A01(
+Arduino_GFX *lcd = new Arduino_GC9A01(
   bus,
   PIN_LCD_RST,
   0,
   true
 );
+Arduino_Canvas canvas(240, 240, lcd);
+Arduino_GFX *gfx = lcd;
+bool canvasDisponivel = false;
+bool telaSuja = false;
+uint8_t quadroFundo = 0;
+unsigned long ultimoQuadro = 0;
 
 // =====================================================
 // CONFIGURAÇÕES E VARIÁVEIS
 // =====================================================
 
 Preferences preferences;
+MenuButton botaoMenu;
 
-int contador = 34;
-int maxPV = 34;
+int contadores[2] = {34, 34};
+int maximosPV[2] = {34, 34};
+uint8_t numeroJogadores = 1;
+uint8_t jogadorEmEdicao = 0;
+uint8_t paginaConfiguracoes = 0;
 
 // 0 = Star Wars Unlimited
 // 1 = Magic
@@ -60,7 +80,9 @@ enum Tela {
   TELA_CONTADOR,
   TELA_CONFIGURACOES,
   TELA_MAX_PV,
-  TELA_CONFIRMAR_REFRESH
+  TELA_CONFIRMAR_REFRESH,
+  TELA_JOGADORES,
+  TELA_NAO_IMPLEMENTADO
 };
 
 Tela telaAtual = TELA_CONTADOR;
@@ -76,21 +98,20 @@ const unsigned long TEMPO_CONFIRMAR = 3000;
 
 void limparTela() {
   gfx->fillScreen(COR_FUNDO);
+  telaSuja = true;
 }
 
 void textoCentralizado(
   const char *texto,
   int y,
   int tamanho,
-  uint16_t cor = COR_BRANCO
+  uint16_t cor = COR_BRANCO,
+  uint16_t fundo = COR_FUNDO
 ) {
-  int largura = strlen(texto) * 6 * tamanho;
+  int altura = tamanho == 1 ? 12 : (tamanho == 2 ? 16 : 22);
+  int largura = SmoothText::width(texto, altura);
   int x = (240 - largura) / 2;
-
-  gfx->setTextSize(tamanho);
-  gfx->setTextColor(cor);
-  gfx->setCursor(x, y);
-  gfx->print(texto);
+  SmoothText::draw(*gfx, texto, x, y, altura, cor, fundo);
 }
 
 void desenharBotao(
@@ -99,24 +120,23 @@ void desenharBotao(
   int largura,
   int altura,
   const char *texto,
-  uint16_t cor
+  uint16_t cor,
+  int icone = -1
 ) {
-  gfx->fillRoundRect(
-    x, y,
-    largura, altura,
-    10,
-    cor
-  );
+  gfx->fillRoundRect(x, y, largura, altura, 12, cor);
+  gfx->drawRoundRect(x, y, largura, altura, 12, COR_BRANCO);
 
-  gfx->setTextSize(2);
-  gfx->setTextColor(COR_BRANCO);
-
-  int larguraTexto = strlen(texto) * 12;
-  int textoX = x + (largura - larguraTexto) / 2;
-  int textoY = y + (altura - 16) / 2;
-
-  gfx->setCursor(textoX, textoY);
-  gfx->print(texto);
+  const int alturaTexto = 16;
+  int larguraTexto = SmoothText::width(texto, alturaTexto);
+  int larguraGrupo = larguraTexto + (icone >= 0 ? 28 : 0);
+  int textoX = x + (largura - larguraGrupo) / 2;
+  if (icone >= 0) {
+    UIIcons::draw(*gfx, static_cast<UIIcons::Icon>(icone),
+                  textoX, y + (altura - 24) / 2, COR_TEXTO);
+    textoX += 28;
+  }
+  int textoY = y + (altura - alturaTexto) / 2;
+  SmoothText::draw(*gfx, texto, textoX, textoY, alturaTexto, COR_BRANCO, cor);
 }
 
 // =====================================================
@@ -124,24 +144,8 @@ void desenharBotao(
 // =====================================================
 
 void desenharEngrenagem() {
-  int cx = 120;
-  int cy = 30;
-  int raio = 10;
-
-  gfx->drawCircle(cx, cy, raio, COR_BRANCO);
-  gfx->drawCircle(cx, cy, 4, COR_BRANCO);
-
-  for (int i = 0; i < 8; i++) {
-    float angulo = i * PI / 4;
-
-    int x1 = cx + cos(angulo) * 11;
-    int y1 = cy + sin(angulo) * 11;
-
-    int x2 = cx + cos(angulo) * 15;
-    int y2 = cy + sin(angulo) * 15;
-
-    gfx->drawLine(x1, y1, x2, y2, COR_BRANCO);
-  }
+  SmoothIcons::button(*gfx, SmoothIcons::settings, 120, 33,
+                       COR_TEXTO, COR_CARTAO, COR_FUNDO);
 }
 
 // =====================================================
@@ -149,24 +153,8 @@ void desenharEngrenagem() {
 // =====================================================
 
 void desenharRefresh() {
-  int cx = 120;
-  int cy = 190;
-
-  gfx->drawCircle(cx, cy, 15, COR_BRANCO);
-
-  gfx->fillTriangle(
-    120, 169,
-    112, 180,
-    128, 180,
-    COR_BRANCO
-  );
-
-  gfx->fillTriangle(
-    120, 211,
-    112, 200,
-    128, 200,
-    COR_BRANCO
-  );
+  SmoothIcons::button(*gfx, SmoothIcons::refresh, 120, 195,
+                       COR_TEXTO, COR_CARTAO, COR_FUNDO);
 }
 
 // =====================================================
@@ -175,27 +163,45 @@ void desenharRefresh() {
 
 void desenharContador() {
   limparTela();
+  if (canvasDisponivel) Hyperspace::render(canvas.getFramebuffer(), quadroFundo);
 
-  desenharEngrenagem();
-
-  // Nome do jogo
-  if (jogoAtual == 0) {
-    textoCentralizado("STAR WARS", 55, 2);
-  } else {
-    textoCentralizado("MAGIC", 55, 2);
+  if (numeroJogadores == 2) {
+    // P1 fica de frente para o jogador do lado oposto da mesa.
+    gfx->drawFastHLine(16, 120, 208, COR_TRILHO);
+    SmoothText::draw(*gfx, "P1", 120 - SmoothText::width("P1", 12) / 2,
+                     17, 12, COR_TEXTO, COR_FUNDO, true);
+    if (jogoAtual == 1) {
+      SmoothText::draw(*gfx, "MAGIC", 120 - SmoothText::width("MAGIC", 12) / 2,
+                       86, 12, COR_TEXTO, COR_FUNDO, true);
+    }
+    textoCentralizado("P2", 211, 1, COR_TEXTO);
+    for (int jogador = 0; jogador < 2; ++jogador) {
+      const int cy = jogador == 0 ? 60 : 180;
+      SmoothDigits::draw(*gfx, contadores[jogador], 120, cy, 120, 40,
+                         COR_DESTAQUE, COR_FUNDO, jogador == 0);
+      UIIcons::draw(*gfx, UIIcons::Minus, 28, cy - 12, COR_TEXTO);
+      UIIcons::draw(*gfx, UIIcons::Plus, 188, cy - 12, COR_TEXTO);
+    }
+    // Acoes globais junto a divisoria, sem ocupar os quadrantes de PV.
+    SmoothIcons::button(*gfx, SmoothIcons::settings, 96, 120,
+                         COR_TEXTO, COR_CARTAO, COR_FUNDO);
+    SmoothIcons::button(*gfx, SmoothIcons::refresh, 144, 120,
+                         COR_TEXTO, COR_CARTAO, COR_FUNDO);
+    return;
   }
 
-  // Valor do contador
-  char textoPV[10];
-  sprintf(textoPV, "%d", contador);
+  // Controles continuam nas mesmas regioes de toque.
+  desenharEngrenagem();
 
-  textoCentralizado(textoPV, 95, 5);
+  // Identificacao do jogo.
+  if (jogoAtual == 1) {
+    textoCentralizado("MAGIC", 57, 2, COR_TEXTO);
+  }
 
-  // PV máximo configurado
-  char textoMax[20];
-  sprintf(textoMax, "MAX: %d", maxPV);
-
-  textoCentralizado(textoMax, 145, 1, COR_BRANCO);
+  // Digitos com cobertura de 4 bits, sem ampliar a fonte bitmap basica.
+  SmoothDigits::draw(*gfx, contadores[0], 120, 110, 144, 56, COR_DESTAQUE, COR_FUNDO);
+  UIIcons::draw(*gfx, UIIcons::Minus, 18, 101, COR_TEXTO);
+  UIIcons::draw(*gfx, UIIcons::Plus, 198, 101, COR_TEXTO);
 
   desenharRefresh();
 }
@@ -206,37 +212,48 @@ void desenharContador() {
 
 void desenharConfiguracoes() {
   limparTela();
-
-  textoCentralizado("CONFIGURACOES", 25, 2);
-
-  gfx->drawRoundRect(
-    20, 65,
-    200, 45,
-    8,
-    COR_BRANCO
-  );
-
-  textoCentralizado("MAXIMO PV", 80, 2);
-
-  gfx->drawRoundRect(
-    20, 120,
-    200, 45,
-    8,
-    COR_BRANCO
-  );
-
-  if (jogoAtual == 0) {
-    textoCentralizado("JOGO: SWU", 135, 2);
-  } else {
-    textoCentralizado("JOGO: MAGIC", 135, 2);
+  textoCentralizado("CONFIGURACOES", 32, 2, COR_TEXTO);
+  if (paginaConfiguracoes == 1 && numeroJogadores == 2) {
+    textoCentralizado("2/2", 50, 1, COR_TEXTO);
+    desenharBotao(25, 85, 190, 45, "JOGADORES: 2", COR_CARTAO);
+    desenharBotao(48, 185, 38, 32, "<", COR_CARTAO);
+    desenharBotao(94, 185, 100, 32, "VOLTAR", COR_CARTAO);
+    return;
   }
+  paginaConfiguracoes = 0;
+  desenharBotao(25, 55, 190, 35, "PV JOGADOR 1", COR_CARTAO);
+  if (numeroJogadores == 2) {
+    desenharBotao(25, 95, 190, 35, "PV JOGADOR 2", COR_CARTAO);
+    desenharBotao(25, 135, 190, 35, jogoAtual == 0 ? "JOGO: SWU" : "JOGO: MAGIC", COR_CARTAO);
+  } else {
+    desenharBotao(25, 95, 190, 35, jogoAtual == 0 ? "JOGO: SWU" : "JOGO: MAGIC", COR_CARTAO);
+    desenharBotao(25, 135, 190, 35, "JOGADORES: 1", COR_CARTAO);
+  }
+  if (numeroJogadores == 2) {
+    desenharBotao(46, 185, 100, 32, "VOLTAR", COR_CARTAO);
+    desenharBotao(154, 185, 38, 32, ">", COR_CARTAO);
+  } else {
+    desenharBotao(60, 185, 120, 35, "VOLTAR", COR_CARTAO, UIIcons::Back);
+  }
+}
 
-  desenharBotao(
-    65, 185,
-    110, 35,
-    "VOLTAR",
-    COR_CINZA
-  );
+void desenharJogadores() {
+  limparTela();
+  textoCentralizado("JOGADORES", 30, 2, COR_TEXTO);
+  const char *rotulos[] = {"1", "2", "3", "4"};
+  for (int i = 0; i < 4; ++i) {
+    int x = (i % 2) == 0 ? 46 : 130;
+    int y = i < 2 ? 65 : 125;
+    desenharBotao(x, y, 64, 44, rotulos[i],
+                   numeroJogadores == i + 1 ? COR_TRILHO : COR_CARTAO);
+  }
+  desenharBotao(60, 185, 120, 35, "VOLTAR", COR_CARTAO, UIIcons::Back);
+}
+
+void desenharNaoImplementado() {
+  limparTela();
+  textoCentralizado("nao implementado", 95, 2, COR_TEXTO);
+  desenharBotao(60, 175, 120, 40, "VOLTAR", COR_CARTAO, UIIcons::Back);
 }
 
 // =====================================================
@@ -246,42 +263,22 @@ void desenharConfiguracoes() {
 void desenharMaxPV() {
   limparTela();
 
-  textoCentralizado("MAXIMO PV", 35, 2);
+  textoCentralizado(jogadorEmEdicao == 0 ? "PV JOGADOR 1" : "PV JOGADOR 2", 35, 2, COR_TEXTO);
 
-  char texto[10];
-  sprintf(texto, "%d", maxPV);
+  // Valor em destaque.
+  SmoothDigits::draw(*gfx, maximosPV[jogadorEmEdicao], 120, 122, 64, 28, COR_DESTAQUE, COR_FUNDO);
 
-  textoCentralizado(texto, 105, 5);
+  // Diminuir.
+  gfx->fillRoundRect(20, 90, 65, 65, 14, COR_CARTAO);
+  gfx->drawRoundRect(20, 90, 65, 65, 14, COR_DESTAQUE);
+  UIIcons::draw(*gfx, UIIcons::Minus, 40, 110, COR_TEXTO);
 
-  // Botão diminuir
-  gfx->fillRoundRect(
-    20, 90,
-    65, 65,
-    10,
-    COR_VERMELHO
-  );
+  // Aumentar.
+  gfx->fillRoundRect(155, 90, 65, 65, 14, COR_CARTAO);
+  gfx->drawRoundRect(155, 90, 65, 65, 14, COR_DESTAQUE);
+  UIIcons::draw(*gfx, UIIcons::Plus, 176, 110, COR_TEXTO);
 
-  textoCentralizado("-", 112, 4);
-
-  // Botão aumentar
-  gfx->fillRoundRect(
-    155, 90,
-    65, 65,
-    10,
-    COR_VERDE
-  );
-
-  gfx->setTextSize(4);
-  gfx->setTextColor(COR_BRANCO);
-  gfx->setCursor(176, 112);
-  gfx->print("+");
-
-  desenharBotao(
-    65, 180,
-    110, 40,
-    "SALVAR",
-    COR_VERDE
-  );
+  desenharBotao(60, 180, 120, 40, "SALVAR", COR_CARTAO, UIIcons::Check);
 }
 
 // =====================================================
@@ -291,28 +288,25 @@ void desenharMaxPV() {
 void desenharConfirmacaoRefresh() {
   limparTela();
 
-  textoCentralizado("CERTEZA?", 65, 3);
+  textoCentralizado("CERTEZA?", 65, 3, COR_TEXTO);
+  textoCentralizado(numeroJogadores == 2 ? "RESTAURAR AMBOS?" : "RESTAURAR PV?", 103, 1, COR_BRANCO);
 
-  desenharBotao(
-    20, 125,
-    90, 45,
-    "SIM",
-    COR_VERDE
-  );
+  desenharBotao(20, 125, 90, 45, "SIM", COR_CARTAO, UIIcons::Check);
+  desenharBotao(130, 125, 90, 45, "NAO", COR_CARTAO, UIIcons::Close);
 
-  desenharBotao(
-    130, 125,
-    90, 45,
-    "NAO",
-    COR_VERMELHO
-  );
-
-  textoCentralizado("3 SEGUNDOS", 190, 1);
+  textoCentralizado("3 SEGUNDOS", 190, 1, COR_TEXTO);
 }
 
 // =====================================================
 // NAVEGAÇÃO
 // =====================================================
+
+void abrirConfiguracoes() {
+  paginaConfiguracoes = 0;
+  telaAtual = TELA_CONFIGURACOES;
+  desenharConfiguracoes();
+  Serial.println("[TELA] Configuracoes");
+}
 
 void voltarContador() {
   telaAtual = TELA_CONTADOR;
@@ -336,7 +330,7 @@ void cancelarRefresh() {
 }
 
 void confirmarRefresh() {
-  contador = maxPV;
+  for (int i = 0; i < numeroJogadores; ++i) contadores[i] = maximosPV[i];
 
   Serial.println("[REFRESH] PV restaurado!");
 
@@ -350,33 +344,35 @@ void confirmarRefresh() {
 void carregarConfiguracoes() {
   preferences.begin("contador", false);
 
-  maxPV = preferences.getUChar("maxPV", 34);
+  maximosPV[0] = preferences.getUChar("maxPV", 34);
+  maximosPV[1] = preferences.getUChar("maxPV2", 34);
+  numeroJogadores = preferences.getUChar("jogadores", 1);
   jogoAtual = preferences.getUChar("jogo", 0);
 
   // Proteção contra valores inválidos
-  if (maxPV < 20 || maxPV > 40) {
-    maxPV = 34;
+  if (numeroJogadores < 1 || numeroJogadores > 2) numeroJogadores = 1;
+  for (int i = 0; i < 2; ++i) {
+    if (maximosPV[i] < 20 || maximosPV[i] > 40) maximosPV[i] = 34;
+    contadores[i] = maximosPV[i];
   }
 
   if (jogoAtual > 1) {
     jogoAtual = 0;
   }
 
-  contador = maxPV;
-
   Serial.println("[CONFIG] Configuracoes carregadas");
   Serial.print("[CONFIG] Maximo PV: ");
-  Serial.println(maxPV);
+  Serial.println(maximosPV[0]);
 
   Serial.print("[CONFIG] Jogo: ");
   Serial.println(jogoAtual);
 }
 
 void salvarMaxPV() {
-  preferences.putUChar("maxPV", maxPV);
+  preferences.putUChar(jogadorEmEdicao == 0 ? "maxPV" : "maxPV2", maximosPV[jogadorEmEdicao]);
 
   Serial.print("[CONFIG] Novo PV maximo salvo: ");
-  Serial.println(maxPV);
+  Serial.println(maximosPV[jogadorEmEdicao]);
 }
 
 void salvarJogo() {
@@ -425,211 +421,136 @@ bool lerTouch(int &x, int &y) {
 // PROCESSAMENTO DOS TOQUES
 // =====================================================
 
+bool dentro(int x, int y, int esquerda, int topo, int largura, int altura) {
+  return x >= esquerda && x < esquerda + largura && y >= topo && y < topo + altura;
+}
+
+void alterarPV(uint8_t jogador, bool aumentar) {
+  int &pv = contadores[jogador];
+  if (aumentar) {
+    if ((jogoAtual == 1 || pv < maximosPV[jogador]) && pv < INT_MAX) ++pv;
+  } else if (pv > 0) {
+    --pv;
+  }
+}
+
 void processarToque(int x, int y) {
-
-  Serial.print("[TOUCH] X: ");
-  Serial.print(x);
-  Serial.print(" | Y: ");
-  Serial.println(y);
-
-  // ---------------------------------------------------
-  // TELA PRINCIPAL
-  // ---------------------------------------------------
+  if (x < 0 || x >= 240 || y < 0 || y >= 240) return;
 
   if (telaAtual == TELA_CONTADOR) {
-
-    // Engrenagem / configurações
-    if (
-      y < 48 &&
-      x >= 90 &&
-      x <= 150
-    ) {
-      telaAtual = TELA_CONFIGURACOES;
-
-      desenharConfiguracoes();
-
-      Serial.println("[TELA] Configuracoes");
-
-      return;
-    }
-
-    // Botão refresh
-    if (
-      y >= 165 &&
-      x >= 75 &&
-      x <= 165
-    ) {
-      abrirConfirmacaoRefresh();
-
-      return;
-    }
-
-    // Incrementar ou decrementar
-    if (x >= 120) {
-
-      // STAR WARS: respeita PV máximo
-      if (jogoAtual == 0) {
-
-        if (contador < maxPV) {
-          contador++;
-
-          Serial.println("[ACAO] +1 SWU");
-        } else {
-          Serial.println("[LIMITE] Maximo PV atingido");
-        }
-
+    if (numeroJogadores == 2) {
+      // As acoes globais tem prioridade sobre os quatro quadrantes de PV.
+      if (dentro(x, y, 76, 100, 40, 40)) {
+        abrirConfiguracoes();
+        return;
       }
-
-      // MAGIC: não respeita PV máximo
-      else {
-
-        contador++;
-
-        Serial.println("[MAGIC] +1");
+      if (dentro(x, y, 124, 100, 40, 40)) {
+        abrirConfirmacaoRefresh();
+        return;
       }
-
+      alterarPV(y < 120 ? 0 : 1, x >= 120);
     } else {
-
-      // Ambos os jogos podem diminuir até zero
-      if (contador > 0) {
-        contador--;
-
-        Serial.println("[ACAO] -1");
-      } else {
-        Serial.println("[LIMITE] PV minimo atingido");
+      // Preserva as regioes originais no modo de um jogador.
+      if (y < 48 && x >= 90 && x <= 150) {
+        abrirConfiguracoes();
+        return;
       }
+      if (y >= 165 && x >= 75 && x <= 165) {
+        abrirConfirmacaoRefresh();
+        return;
+      }
+      alterarPV(0, x >= 120);
     }
-
     desenharContador();
-
     return;
   }
 
-  // ---------------------------------------------------
-  // TELA DE CONFIGURAÇÕES
-  // ---------------------------------------------------
-
   if (telaAtual == TELA_CONFIGURACOES) {
-
-    // Configurar PV máximo
-    if (y >= 55 && y <= 110) {
-
-      telaAtual = TELA_MAX_PV;
-
-      desenharMaxPV();
-
-      Serial.println("[TELA] Alterar maximo PV");
-
-      return;
-    }
-
-    // Alternar jogo
-    if (y >= 112 && y <= 165) {
-
-      if (jogoAtual == 0) {
-        jogoAtual = 1;
-      } else {
-        jogoAtual = 0;
+    if (paginaConfiguracoes == 1) {
+      if (dentro(x, y, 25, 85, 190, 45) && numeroJogadores == 2) {
+        telaAtual = TELA_JOGADORES;
+        desenharJogadores();
+      } else if (dentro(x, y, 48, 185, 38, 32)) {
+        paginaConfiguracoes = 0;
+        desenharConfiguracoes();
+      } else if (dentro(x, y, 94, 185, 100, 32)) {
+        voltarContador();
       }
-
+      return;
+    }
+    if (dentro(x, y, 25, 55, 190, 35)) {
+      jogadorEmEdicao = 0;
+      telaAtual = TELA_MAX_PV;
+      desenharMaxPV();
+    } else if (numeroJogadores == 2 && dentro(x, y, 25, 95, 190, 35)) {
+      jogadorEmEdicao = 1;
+      telaAtual = TELA_MAX_PV;
+      desenharMaxPV();
+    } else if (dentro(x, y, 25, numeroJogadores == 2 ? 135 : 95, 190, 35)) {
+      jogoAtual = jogoAtual == 0 ? 1 : 0;
       salvarJogo();
-
       desenharConfiguracoes();
-
-      Serial.println("[CONFIG] Jogo alterado");
-
-      return;
-    }
-
-    // Voltar
-    if (y >= 180) {
-
+    } else if (numeroJogadores == 1 && dentro(x, y, 25, 135, 190, 35)) {
+      telaAtual = TELA_JOGADORES;
+      desenharJogadores();
+    } else if (numeroJogadores == 2 && dentro(x, y, 154, 185, 38, 32)) {
+      paginaConfiguracoes = 1;
+      desenharConfiguracoes();
+    } else if (numeroJogadores == 2 ? dentro(x, y, 46, 185, 100, 32)
+                                    : dentro(x, y, 60, 185, 120, 35)) {
       voltarContador();
-
-      return;
     }
+    return;
   }
 
-  // ---------------------------------------------------
-  // TELA DE ALTERAÇÃO DO PV MÁXIMO
-  // ---------------------------------------------------
+  if (telaAtual == TELA_JOGADORES) {
+    for (int i = 0; i < 4; ++i) {
+      const int bx = (i % 2) == 0 ? 46 : 130;
+      const int by = i < 2 ? 65 : 125;
+      if (!dentro(x, y, bx, by, 64, 44)) continue;
+      if (i >= 2) {
+        telaAtual = TELA_NAO_IMPLEMENTADO;
+        desenharNaoImplementado();
+      } else {
+        numeroJogadores = i + 1;
+        preferences.putUChar("jogadores", numeroJogadores);
+        // Alternar o layout preserva os PV dos dois jogadores nesta sessao.
+        abrirConfiguracoes();
+      }
+      return;
+    }
+    if (dentro(x, y, 60, 185, 120, 35)) abrirConfiguracoes();
+    return;
+  }
+
+  if (telaAtual == TELA_NAO_IMPLEMENTADO) {
+    if (dentro(x, y, 60, 175, 120, 40)) {
+      telaAtual = TELA_JOGADORES;
+      desenharJogadores();
+    }
+    return;
+  }
 
   if (telaAtual == TELA_MAX_PV) {
-
-    // Diminuir
-    if (
-      y >= 80 &&
-      y <= 155 &&
-      x < 90
-    ) {
-
-      if (maxPV > 20) {
-        maxPV--;
-
-        Serial.println("[CONFIG] PV maximo -1");
-      }
-
+    int &maximo = maximosPV[jogadorEmEdicao];
+    if (y >= 80 && y <= 155 && x < 90) {
+      if (maximo > 20) --maximo;
       desenharMaxPV();
-
-      return;
-    }
-
-    // Aumentar
-    if (
-      y >= 80 &&
-      y <= 155 &&
-      x > 150
-    ) {
-
-      if (maxPV < 40) {
-        maxPV++;
-
-        Serial.println("[CONFIG] PV maximo +1");
-      }
-
+    } else if (y >= 80 && y <= 155 && x > 150) {
+      if (maximo < 40) ++maximo;
       desenharMaxPV();
-
-      return;
-    }
-
-    // Salvar
-    if (y >= 175 && y <= 230) {
-
+    } else if (y >= 175 && y <= 230) {
       salvarMaxPV();
-
-      // Ao salvar, o contador assume o novo máximo
-      contador = maxPV;
-
+      // O salvamento restaura apenas o jogador editado.
+      contadores[jogadorEmEdicao] = maximo;
       voltarContador();
-
-      Serial.println("[CONFIG] PV atualizado");
-
-      return;
     }
+    return;
   }
 
-  // ---------------------------------------------------
-  // TELA DE CONFIRMAÇÃO DO REFRESH
-  // ---------------------------------------------------
-
-  if (telaAtual == TELA_CONFIRMAR_REFRESH) {
-
-    if (y >= 115 && y <= 180) {
-
-      // SIM
-      if (x < 120) {
-        confirmarRefresh();
-
-        return;
-      }
-
-      // NÃO
-      else {
-        cancelarRefresh();
-
-        return;
-      }
-    }
+  if (telaAtual == TELA_CONFIRMAR_REFRESH && y >= 115 && y <= 180) {
+    if (x < 120) confirmarRefresh();
+    else cancelarRefresh();
   }
 }
 
@@ -661,6 +582,15 @@ void setup() {
     Serial.println("[LCD] Display inicializado");
   }
 
+  // LCD initialization is unchanged. Canvas only composes completed frames.
+  canvasDisponivel = canvas.begin(GFX_SKIP_OUTPUT_BEGIN);
+  if (canvasDisponivel) {
+    gfx = &canvas;
+    SmoothDigits::targetBuffer() = canvas.getFramebuffer();
+  } else {
+    Serial.println("[UI] Canvas indisponivel: fundo solido, sem animacao");
+  }
+
   // Touch reset
   Serial.println("[TOUCH] Inicializando CST816S...");
 
@@ -684,8 +614,13 @@ void setup() {
   // Configurações salvas
   carregarConfiguracoes();
 
+  botaoMenu.begin();
+
   // Primeira tela
   desenharContador();
+  if (canvasDisponivel) canvas.flush();
+  telaSuja = false;
+  ultimoQuadro = millis();
 
   Serial.println("[SISTEMA] Pronto!");
 }
@@ -695,6 +630,10 @@ void setup() {
 // =====================================================
 
 void loop() {
+
+  // Uma abertura por pressionamento; nao interrompe edicao nem confirmacao.
+  const bool abrirMenu = botaoMenu.pressed() && telaAtual == TELA_CONTADOR;
+  if (abrirMenu) abrirConfiguracoes();
 
   // Verifica o timeout da confirmação
   if (telaAtual == TELA_CONFIRMAR_REFRESH) {
@@ -717,11 +656,34 @@ void loop() {
   bool tocando = lerTouch(x, y);
 
   // Detecta apenas o início de um toque
-  if (tocando && !toqueAnterior) {
+  if (tocando && !toqueAnterior && !abrirMenu) {
     processarToque(x, y);
   }
 
   toqueAnterior = tocando;
+
+  // Advance by source timing without blocking touch or confirmation timeout.
+  const unsigned long agora = millis();
+  if (canvasDisponivel && telaAtual == TELA_CONTADOR) {
+    bool avancou = false;
+    uint8_t passos = 0;
+    while (agora - ultimoQuadro >= Hyperspace::duration(quadroFundo) &&
+           passos < Hyperspace::FRAME_COUNT) {
+      ultimoQuadro += Hyperspace::duration(quadroFundo);
+      quadroFundo = (quadroFundo + 1) % Hyperspace::FRAME_COUNT;
+      avancou = true;
+      ++passos;
+    }
+    if (passos == Hyperspace::FRAME_COUNT) ultimoQuadro = agora;
+    if (avancou) desenharContador();
+  } else {
+    // Pause while menus/confirmation are open; no catch-up burst on return.
+    ultimoQuadro = agora;
+  }
+  if (telaSuja) {
+    if (canvasDisponivel) canvas.flush();
+    telaSuja = false;
+  }
 
   delay(25);
 }
