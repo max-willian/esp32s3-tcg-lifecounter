@@ -96,3 +96,11 @@ skipping late frames with a maximum 20-step catch-up, and pauses outside the
 counter. Hardware tests must check LCD transfer performance, touch responsiveness,
 and the unchanged confirmation timeout. Flash size/partition/upload settings and
 NVS keys have not been changed. Yellow accent is 0xFF43 (RGB565 #FFE81F).
+
+## SWU counting and maximum caption
+
+See GAME_RULES.md for corrected SWU initialization/reset and game-switch rules.
+Both layouts show MAX PV: X in 10-pixel smooth text below each number, with
+P1's caption rotated. Labels cover the full 20..40 range. Hardware validation
+must check zero/maximum boundaries, reset/save isolation, game switching and
+caption legibility/orientation. No GPIO, NVS key or touch-region changes.

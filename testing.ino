@@ -66,7 +66,7 @@ unsigned long ultimoQuadro = 0;
 Preferences preferences;
 MenuButton botaoMenu;
 
-int contadores[2] = {34, 34};
+int contadores[2] = {0, 0};
 int maximosPV[2] = {34, 34};
 uint8_t numeroJogadores = 1;
 uint8_t jogadorEmEdicao = 0;
@@ -95,6 +95,18 @@ const unsigned long TEMPO_CONFIRMAR = 3000;
 // =====================================================
 // FUNÇÕES AUXILIARES
 // =====================================================
+
+// SWU conta dano acumulado; Magic conta vida restante.
+int pvInicial(uint8_t jogador) {
+  return jogoAtual == 0 ? 0 : maximosPV[jogador];
+}
+
+void desenharLegendaMaxPV(uint8_t jogador, int y, bool girar = false) {
+  char texto[16];
+  snprintf(texto, sizeof(texto), "MAX PV: %d", maximosPV[jogador]);
+  SmoothText::draw(*gfx, texto, 120 - SmoothText::width(texto, 10) / 2,
+                   y, 10, COR_TEXTO, COR_FUNDO, girar);
+}
 
 void limparTela() {
   gfx->fillScreen(COR_FUNDO);
@@ -174,9 +186,10 @@ void desenharContador() {
       SmoothText::draw(*gfx, "MAGIC", 120 - SmoothText::width("MAGIC", 12) / 2,
                        86, 12, COR_TEXTO, COR_FUNDO, true);
     }
-    textoCentralizado("P2", 211, 1, COR_TEXTO);
+    textoCentralizado("P2", 219, 1, COR_TEXTO);
     for (int jogador = 0; jogador < 2; ++jogador) {
       const int cy = jogador == 0 ? 60 : 180;
+      desenharLegendaMaxPV(jogador, jogador == 0 ? 29 : 203, jogador == 0);
       SmoothDigits::draw(*gfx, contadores[jogador], 120, cy, 120, 40,
                          COR_DESTAQUE, COR_FUNDO, jogador == 0);
       UIIcons::draw(*gfx, UIIcons::Minus, 28, cy - 12, COR_TEXTO);
@@ -203,6 +216,7 @@ void desenharContador() {
   UIIcons::draw(*gfx, UIIcons::Minus, 18, 101, COR_TEXTO);
   UIIcons::draw(*gfx, UIIcons::Plus, 198, 101, COR_TEXTO);
 
+  desenharLegendaMaxPV(0, 146);
   desenharRefresh();
 }
 
@@ -330,7 +344,7 @@ void cancelarRefresh() {
 }
 
 void confirmarRefresh() {
-  for (int i = 0; i < numeroJogadores; ++i) contadores[i] = maximosPV[i];
+  for (int i = 0; i < numeroJogadores; ++i) contadores[i] = pvInicial(i);
 
   Serial.println("[REFRESH] PV restaurado!");
 
@@ -349,16 +363,15 @@ void carregarConfiguracoes() {
   numeroJogadores = preferences.getUChar("jogadores", 1);
   jogoAtual = preferences.getUChar("jogo", 0);
 
+  if (jogoAtual > 1) jogoAtual = 0;
+
   // Proteção contra valores inválidos
   if (numeroJogadores < 1 || numeroJogadores > 2) numeroJogadores = 1;
   for (int i = 0; i < 2; ++i) {
     if (maximosPV[i] < 20 || maximosPV[i] > 40) maximosPV[i] = 34;
-    contadores[i] = maximosPV[i];
+    contadores[i] = pvInicial(i);
   }
 
-  if (jogoAtual > 1) {
-    jogoAtual = 0;
-  }
 
   Serial.println("[CONFIG] Configuracoes carregadas");
   Serial.print("[CONFIG] Maximo PV: ");
@@ -488,6 +501,7 @@ void processarToque(int x, int y) {
       desenharMaxPV();
     } else if (dentro(x, y, 25, numeroJogadores == 2 ? 135 : 95, 190, 35)) {
       jogoAtual = jogoAtual == 0 ? 1 : 0;
+      for (int i = 0; i < 2; ++i) contadores[i] = pvInicial(i);
       salvarJogo();
       desenharConfiguracoes();
     } else if (numeroJogadores == 1 && dentro(x, y, 25, 135, 190, 35)) {
@@ -542,7 +556,7 @@ void processarToque(int x, int y) {
     } else if (y >= 175 && y <= 230) {
       salvarMaxPV();
       // O salvamento restaura apenas o jogador editado.
-      contadores[jogadorEmEdicao] = maximo;
+      contadores[jogadorEmEdicao] = pvInicial(jogadorEmEdicao);
       voltarContador();
     }
     return;

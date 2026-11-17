@@ -54,7 +54,7 @@ foreach($page in 0..2){
       if(($x-120)*($x-120)+($y-120)*($y-120) -le 14400){$bmp.SetPixel($x,$y,$background.GetPixel($x,$y))}
     }}
     $pen=[Drawing.Pen]::new((RGB565 0x39C7));$g.DrawLine($pen,$offset+16,120,$offset+224,120);$pen.Dispose()
-    Label 'P1' 12 120 17 $bg $true;Label 'P2' 12 120 211
+    Label 'P1' 12 120 17 $bg $true;Label 'P2' 12 120 219;Label 'MAX PV: 20' 10 120 29 $bg $true;Label 'MAX PV: 40' 10 120 203
     foreach($cy in @(60,180)){
       $data=Get-Mask $digits 'digits40';$w=34;$h=40;$x=85
       foreach($d in @(3,4)){

@@ -28,7 +28,7 @@ Namespace: contador
 2. Read maxPV, maxPV2 and jogadores.
 3. Read jogo (shared).
 4. Validate values.
-5. Initialize both counters to their respective maximum.
+5. Initialize both counters at zero in SWU or their respective maximum in Magic.
 
 ## Saving
 
@@ -41,3 +41,10 @@ new keys. Current life totals are not persisted. Maximum PV is saved to maxPV or
 maxPV2 according to the edited player; saving resets only that player's PV.
 Player count is saved immediately on selecting 1/2. Selecting 3/4 writes nothing.
 No namespace, partition, storage type or existing key is changed.
+## SWU counting and maximum caption
+
+See GAME_RULES.md for corrected SWU initialization/reset and game-switch rules.
+Both layouts show MAX PV: X in 10-pixel smooth text below each number, with
+P1's caption rotated. Labels cover the full 20..40 range. Hardware validation
+must check zero/maximum boundaries, reset/save isolation, game switching and
+caption legibility/orientation. No GPIO, NVS key or touch-region changes.

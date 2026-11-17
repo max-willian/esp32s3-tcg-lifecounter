@@ -5,10 +5,10 @@
 240x240 round display, animated hyperspace background on the counter, black
 static menus, and vivid yellow (#FFE81F quantized to RGB565 0xFF43) PV/icons/captions.
 Menu button labels remain white. Dark neutral surfaces protect icon readability.
-No progress ring or MAX caption. Written labels and life digits use Segoe UI Bold
+No progress ring. A small MAX PV: X caption is shown below each counter (10 pixels). Written labels and life digits use Segoe UI Bold
 4-bit coverage masks blended into RGB565. Digits select real raster sizes
 56/40/28/18/12/10 without enlarging pixels. Labels use 12/16/22-pixel masks.
-SmoothTextData.h contains the 30 fixed labels; add new text to GenerateText.ps1.
+SmoothTextData.h contains the fixed labels; add new text to GenerateText.ps1.
 Regenerate fonts with tools/GenerateText.ps1 and tools/GenerateDigits.ps1 on Windows.
 The installed Segoe UI font/System.Drawing are needed only to regenerate assets.
 Settings/refresh and circular surfaces use 4-bit masks from GenerateIcons.ps1.
@@ -54,7 +54,7 @@ PV centers are (120,60) and (120,180), using up to 40-pixel-high smooth digits
 in a 120-pixel-wide area. Minus/plus appear at x=40/200 in each half.
 P1's entire number is rotated 180 degrees to face the opposite player, including
 digit order; P2 remains upright. P1's caption is at y=17 above the number in
-screen coordinates and is also rotated. P2's caption remains at y=211.
+screen coordinates and is also rotated. P2's caption is at y=219; MAX PV is at y=203. P1 MAX PV is at y=29, rotated below the number from P1's viewpoint.
 SWU is not drawn on the counter. When selected, MAGIC remains at y=86, rotated
 toward P1. Rendering rotation does not rotate the display or touch coordinates;
 minus/plus stay in their existing physical quadrants.
@@ -86,7 +86,7 @@ mode or saving anything; VOLTAR returns to player selection.
 ## Refresh
 
 CERTEZA?, SIM/NAO and 3-second cancellation remain. For two players, the subtitle
-says RESTAURAR AMBOS?. SIM restores all active players to their respective maxima.
+says RESTAURAR AMBOS?. SIM resets all active players to zero in SWU or their respective maxima in Magic.
 NAO and timeout preserve every player's PV.
 
 ## Physical button and touch
@@ -116,9 +116,9 @@ The power button and display/touch GPIO assignments remain unchanged.
 - Verify digit fit at 9/10, 99/100, 999/1000 in each sector.
 - Select 3 and 4: see nao implementado, unchanged PV/count and working VOLTAR.
 - Switch 2 -> 1 -> 2: both PV totals are preserved during the session.
-- Refresh SIM restores both maxima in 2-player mode; NAO/3-second timeout preserve both.
+- Refresh SIM resets both to zero in SWU or their maxima in Magic in 2-player mode; NAO/3-second timeout preserve both.
 - In 1-player mode refresh changes only P1; hidden P2 is preserved.
-- Reboot: count/game/maxima persist; each counter starts at its own saved maximum.
+- Reboot: count/game/maxima persist; each counter starts at zero in SWU or its saved maximum in Magic.
 - Check text, circular-edge clipping, icon smoothing and touch responsiveness on hardware.
 - Check continuous animation in 1/2-player and SWU/Magic modes, yellow PV contrast,
   curved glyph edges over moving bright lines, and absence of trails/flicker.
@@ -129,3 +129,11 @@ The power button and display/touch GPIO assignments remain unchanged.
 - Inspect serial output for the canvas-allocation warning; a solid background is
   the intentional fallback, not proof of successful animated playback.
 - Short-press BOOT only after startup; holding during power-on/reset may enter download mode.
+
+## SWU counting and maximum caption
+
+See GAME_RULES.md for corrected SWU initialization/reset and game-switch rules.
+Both layouts show MAX PV: X in 10-pixel smooth text below each number, with
+P1's caption rotated. Labels cover the full 20..40 range. Hardware validation
+must check zero/maximum boundaries, reset/save isolation, game switching and
+caption legibility/orientation. No GPIO, NVS key or touch-region changes.

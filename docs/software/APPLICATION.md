@@ -27,7 +27,7 @@ touchscreen device.
 On startup:
 1. Load saved maximum PV.
 2. Load saved game mode.
-3. Initialize counter using maximum PV.
+3. Initialize counter at zero in SWU or maximum PV in Magic.
 4. Display main counter screen.
 
 ## Counter Behavior
@@ -47,6 +47,14 @@ shared, while current PV and maximum PV are independent for each player.
 Two-player mode splits at y=120 (P1 above, P2 below). Left/right changes only
 that half's PV. Menu/refresh on the divider take priority over quadrant touches.
 Switching player count preserves both PV totals within the session. On startup
-both counters are initialized from their respective saved maxima (default 34).
+both counters start at zero in SWU or their respective saved maxima in Magic (default 34).
 Saving a maximum restores only the edited player's PV. Confirmed refresh
-restores all active players to their respective maxima.
+resets all active players to zero in SWU or their respective maxima in Magic.
+
+## SWU counting and maximum caption
+
+See GAME_RULES.md for corrected SWU initialization/reset and game-switch rules.
+Both layouts show MAX PV: X in 10-pixel smooth text below each number, with
+P1's caption rotated. Labels cover the full 20..40 range. Hardware validation
+must check zero/maximum boundaries, reset/save isolation, game switching and
+caption legibility/orientation. No GPIO, NVS key or touch-region changes.
